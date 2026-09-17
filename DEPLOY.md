@@ -1,62 +1,45 @@
-# Deploying for free
+# Deploying the App
 
-You need two things: somewhere to host static files, and (optionally, for a
-real shared multi-device board) a Firestore database. Both are free.
+This application is built with **Python**, **Flask**, and **SQLite**. Because it has a Python backend and uses a local SQLite database, it cannot be hosted on static sites like GitHub Pages or Netlify. It requires a server capable of running Python.
 
-## 1. Host the static files — GitHub Pages (~2 min)
+The easiest, free platform to deploy this app is **Render**. 
 
-1. Push this folder to a public GitHub repo.
-2. Repo Settings → Pages → Source → "Deploy from a branch" → `main` / root.
-3. Your board is live at `https://<username>.github.io/<repo>/`.
+## Option A: Deploy to Render (Recommended for prototypes)
 
-(Netlify Drop or Vercel's free tier work identically — just drag the folder
-in — if you'd rather not use GitHub Pages.)
+Render offers a generous free tier for Web Services and deploys directly from your GitHub repository.
 
-As-is, with `config.js` left empty, this is already a fully working demo:
-every visitor gets their own local board (great for judging the UX flow,
-not yet a shared board across phones).
+1. **Push your code to GitHub**
+   Make sure all your code is pushed to a public GitHub repository. Ensure `requirements.txt` includes `gunicorn` (which it does) and `app.py` is ready.
 
-## 2. Add a real shared board — Firebase Firestore (~10 min, free "Spark" plan)
+2. **Connect to Render**
+   - Go to [Render.com](https://render.com/) and sign in with GitHub.
+   - Click **New +** -> **Web Service**.
+   - Select **"Build and deploy from a Git repository"**.
+   - Connect your GitHub account and select your repository.
 
-1. Go to the [Firebase console](https://console.firebase.google.com/) →
-   "Add project" (no billing account required for Spark).
-2. Build → Firestore Database → Create database → **Start in test mode**
-   for now (open read/write — fine for a no-login community board; see the
-   tightened rules below before you publicize the URL widely).
-3. Project settings → General → "Your apps" → add a **Web app** → copy the
-   `firebaseConfig` object.
-4. Paste those values into `config.js` in this repo, commit, push.
-5. That's it — `db.js` detects the config and switches from localStorage to
-   Firestore automatically. Every visitor now sees the same board update in
-   real time.
+3. **Configure the Service**
+   - **Name:** Your choice (e.g., `feeder-van-board`)
+   - **Region:** Choose whatever is closest to you.
+   - **Branch:** `main` (or `master`)
+   - **Environment:** `Python 3`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `gunicorn app:app`
+   - **Instance Type:** `Free`
 
-### Recommended Firestore rules (tighten before sharing widely)
+4. **Deploy**
+   Click **Create Web Service**. Render will install dependencies and start the app. Your live URL will appear at the top left.
 
-Test mode's default rules expire after 30 days and are wide open. Replace
-them with this shape — still no login required, but it stops a client from
-writing arbitrary fields or editing someone else's trip:
+> [!WARNING]
+> **A note on SQLite and Render Free Tier:**
+> The Render free tier spins down your server after 15 minutes of inactivity. When it wakes back up, it uses a fresh disk image. **This means your SQLite database will reset to zero every time the app spins down.** This is perfectly fine for a prototype or demo! If you need persistent data later, you can upgrade Render or use a hosted PostgreSQL database.
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /boards/{date}/trips/{tripId} {
-      allow read: if true;
-      allow create: if request.resource.data.keys().hasOnly(
-        ['id','routeId','landmarkId','time','vehicleNumber','note',
-         'confirmCount','reportCount','createdAt','lastConfirmedAt','deviceId'])
-        && request.resource.data.time is string
-        && request.resource.data.routeId is string
-        && request.resource.data.landmarkId is string
-        && request.resource.data.confirmCount is int
-        && request.resource.data.reportCount is int;
-      allow update: if request.resource.data.diff(resource.data)
-        .affectedKeys().hasOnly(['confirmCount','lastConfirmedAt','reportCount']);
-      allow delete: if false;
-    }
-  }
-}
-```
+## Option B: Deploy to PythonAnywhere (Free persistent data)
 
-This is free at any realistic village-board scale (Spark tier: 50k reads
-and 20k writes/day at no cost).
+If you want your SQLite database to persist forever without paying, [PythonAnywhere](https://www.pythonanywhere.com/) is a great alternative.
+
+1. Create a free "Beginner" account.
+2. Under the **Web** tab, click **Add a new web app**.
+3. Choose **Flask** and select your Python version.
+4. Open a **Bash Console** and clone your GitHub repository into your files.
+5. In the **Web** tab, update the **Source code** directory and configure the WSGI file to point to your `app.py`.
+6. Reload the web app, and it will be live at `yourusername.pythonanywhere.com` with fully persistent SQLite data.
