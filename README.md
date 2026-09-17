@@ -4,7 +4,7 @@ A mobile-friendly, lightweight web application built for rural commuters to log 
 
 ## Links
 - **Prototype Link:** https://feeder-van-board.onrender.com
-- **Github Link:**: 
+- **Github Link:** https://github.com/Vaishnavi081/feeder-van-board 
 
 ## Design Decisions: Duplicate Handling & Data Trust
 
