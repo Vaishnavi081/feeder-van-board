@@ -3,8 +3,7 @@
 A mobile-friendly, lightweight web application built for rural commuters to log and track shared informal van schedules.
 
 ## Links
-- **Prototype Link:** [Insert Deployment Link Here]
-- **GitHub Repository:** [Insert GitHub Link Here]
+- **Prototype Link:** https://feeder-van-board.onrender.com
 
 ## Design Decisions: Duplicate Handling & Data Trust
 
