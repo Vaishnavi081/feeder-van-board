@@ -1,0 +1,64 @@
+<main id="board" aria-live="polite">
+{% set visible_routes = ROUTES if current_filter == 'all' else ROUTES | selectattr("id", "equalto", current_filter) | list %}
+{% set any_trips = namespace(value=false) %}
+{% set now_mins = now_minutes() %}
+
+{% for route in visible_routes %}
+    {% set route_trips = trips | selectattr("routeId", "equalto", route.id) | sort(attribute="time") | list %}
+    {% if route_trips | length > 0 %}
+        {% set any_trips.value = true %}
+        <div class="route-group">
+            <div class="route-heading">
+                {{ route.village }} <span class="route-arrow">&rarr;</span> {{ route.destination }}
+            </div>
+            
+            {# Find next trip #}
+            {% set next_trip = None %}
+            {% for t in route_trips %}
+                {% if time_to_minutes(t.time) >= now_mins and not next_trip %}
+                    {% set next_trip = t %}
+                {% endif %}
+            {% endfor %}
+            
+            {% if next_trip %}
+                {% set landmark = landmark_by_id.get(next_trip.landmarkId) %}
+                {% set eta = minutes_until(next_trip.time) %}
+                <div class="next-van-banner">
+                    ⏰ Next: <strong>{{ format_time(next_trip.time) }}</strong> from {{ landmark.name if landmark else "—" }} <span class="next-eta">{{ eta }}</span>
+                </div>
+            {% endif %}
+            
+            {# Upcoming trips #}
+            {% set upcoming = [] %}
+            {% set departed = [] %}
+            {% for t in route_trips %}
+                {% if time_to_minutes(t.time) >= now_mins %}
+                    {% set _ = upcoming.append(t) %}
+                {% else %}
+                    {% set _ = departed.append(t) %}
+                {% endif %}
+            {% endfor %}
+            
+            {% for trip in upcoming %}
+                {% set is_departed = false %}
+                {% include 'partials/trip_card.html' %}
+            {% endfor %}
+            
+            {% if departed | length > 0 and upcoming | length > 0 %}
+                <div class="departed-divider">── Departed ──</div>
+            {% endif %}
+            
+            {% for trip in departed %}
+                {% set is_departed = true %}
+                {% include 'partials/trip_card.html' %}
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endfor %}
+</main>
+
+<p class="empty-state" id="emptyState" {% if any_trips.value %}hidden{% endif %}>
+  <span class="empty-icon">🚐 ← 📍</span><br />
+  No vans logged for today yet on this route.<br />
+  Know one that's running? Tap "Log a van" below.
+</p>

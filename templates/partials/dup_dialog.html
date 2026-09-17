@@ -1,0 +1,27 @@
+{% set landmark = landmark_by_id.get(existing.landmarkId) %}
+<div id="dupDialogContainer" hx-swap-oob="true">
+  <div class="sheet-backdrop" id="dupBackdrop"></div>
+  <section class="dup-dialog" id="dupDialog" role="alertdialog" aria-modal="true" aria-labelledby="dupTitle">
+    <h2 id="dupTitle">Is this the same van?</h2>
+    <p id="dupBody">
+      A van at {{ format_time(existing.time) }} is already listed at {{ landmark.name if landmark else "this stop" }} 
+      (vehicle {{ existing.vehicleNumber or "unlisted" }}). Is this the same van?
+    </p>
+    <div class="dup-actions">
+      <button class="btn-primary" id="dupSameBtn" 
+              hx-post="/confirm/{{ existing.id }}" 
+              hx-target="#dupDialogContainer"
+              hx-swap="innerHTML"
+              onclick="document.body.dispatchEvent(new Event('closeSheet'))">Yes — just confirm it</button>
+      <form hx-post="/submit" hx-target="#formMsg" hx-swap="innerHTML" style="display: inline;" onsubmit="document.getElementById('dupDialogContainer').innerHTML=''">
+        <input type="hidden" name="routeId" value="{{ form_data.routeId }}">
+        <input type="hidden" name="landmarkId" value="{{ form_data.landmarkId }}">
+        <input type="hidden" name="time" value="{{ form_data.time }}">
+        <input type="hidden" name="vehicleNumber" value="{{ form_data.vehicleNumber }}">
+        <input type="hidden" name="note" value="{{ form_data.note }}">
+        <input type="hidden" name="force" value="true">
+        <button type="submit" class="btn-ghost" id="dupDifferentBtn">No, add as a new van</button>
+      </form>
+    </div>
+  </section>
+</div>

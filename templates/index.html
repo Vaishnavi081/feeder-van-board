@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Van Board — today's feeder van departures</title>
+<meta name="description" content="Live board of today's shared van and auto departures between villages and market towns." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script>
+// ── All UI logic lives here. Uses event delegation to survive HTMX body swaps. ──
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.fvbInitialized) return;
+  window.fvbInitialized = true;
+
+  // ── Sync manual inputs to hidden timeInput (24hr) ──
+  function syncManualTime() {
+    const hhEl = document.getElementById("timeHour");
+    const mmEl = document.getElementById("timeMinute");
+    const period = document.querySelector(".period-chip.active")?.dataset.period || "AM";
+    if (!hhEl || !mmEl) return;
+
+    let h = parseInt(hhEl.value, 10);
+    let m = parseInt(mmEl.value, 10);
+
+    // Enforce constraints
+    if (h < 1) h = 1; if (h > 12) h = 12;
+    if (m < 0) m = 0; if (m > 59) m = 59;
+    
+    if (!isNaN(h)) hhEl.value = String(h);
+    if (!isNaN(m)) mmEl.value = String(m).padStart(2, "0");
+
+    if (!isNaN(h) && !isNaN(m)) {
+      if (period === "PM" && h !== 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+      const hidden = document.getElementById("timeInput");
+      if (hidden) hidden.value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      updateTimeDisplay();
+      document.querySelectorAll(".time-chip").forEach(c => c.classList.remove("active"));
+      hhEl.classList.remove("field-error");
+      mmEl.classList.remove("field-error");
+    }
+  }
+
+  // ── Update the big green time display from the hidden timeInput value ──
+  function updateTimeDisplay() {
+    const ti = document.getElementById("timeInput");
+    const disp = document.getElementById("timeDisplay");
+    if (!ti || !disp) return;
+    const val = ti.value;
+    if (!val) { disp.textContent = "—"; return; }
+    const [hh, mm] = val.split(":").map(Number);
+    const period = hh >= 12 ? "PM" : "AM";
+    const h12 = hh % 12 || 12;
+    disp.textContent = `${String(h12).padStart(2,"0")}:${String(mm).padStart(2,"0")} ${period}`;
+  }
+
+  // ── Set time to now + offset minutes ──
+  function setTimeInputToNow(offsetMinutes) {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + (offsetMinutes || 0));
+    const rawM = d.getMinutes();
+    const roundM = Math.round(rawM / 5) * 5;
+    if (roundM === 60) { d.setHours(d.getHours() + 1); d.setMinutes(0); }
+    else { d.setMinutes(roundM); }
+    const h24 = d.getHours();
+    const mm  = d.getMinutes();
+    // Set hidden input
+    const hidden = document.getElementById("timeInput");
+    if (hidden) hidden.value = `${String(h24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+    // Set visible manual inputs
+    const period = h24 >= 12 ? "PM" : "AM";
+    const h12 = h24 % 12 || 12;
+    
+    const hhEl = document.getElementById("timeHour");
+    const mmEl = document.getElementById("timeMinute");
+    if (hhEl) { hhEl.value = String(h12); hhEl.classList.remove("field-error"); }
+    if (mmEl) { mmEl.value = String(mm).padStart(2, "0"); mmEl.classList.remove("field-error"); }
+    
+    document.querySelectorAll(".period-chip").forEach(c => {
+      c.classList.toggle("active", c.dataset.period === period);
+    });
+
+    updateTimeDisplay();
+  }
+
+  function clearFieldErrors() {
+    document.querySelectorAll(".field-error").forEach(el => {
+      el.classList.remove("field-error");
+      el.removeAttribute("aria-invalid");
+    });
+  }
+
+  function showFormError(msg) {
+    const box = document.getElementById("formMsg");
+    if (!box) return;
+    box.innerHTML = `<p class='form-msg error-banner'>${msg}</p>`;
+    box.scrollIntoView({ behavior:"smooth", block:"nearest" });
+  }
+
+  window.openSheet = function() {
+    const sheet    = document.getElementById("sheet");
+    const backdrop = document.getElementById("sheetBackdrop");
+    const tripForm = document.getElementById("tripForm");
+    if (sheet)    sheet.hidden    = false;
+    if (backdrop) backdrop.hidden = false;
+    if (tripForm) tripForm.reset();
+
+    const landmarkId     = document.getElementById("landmarkId");
+    const landmarkSearch = document.getElementById("landmarkSearch");
+    const landmarkList   = document.getElementById("landmarkList");
+    const formMsg        = document.getElementById("formMsg");
+    const landmarkHint   = document.getElementById("landmarkHint");
+    if (landmarkId)     landmarkId.value   = "";
+    if (landmarkSearch) landmarkSearch.value = "";
+    if (landmarkList)   landmarkList.innerHTML = "";
+    if (formMsg)        formMsg.innerHTML  = "";
+    if (landmarkHint)   landmarkHint.hidden = false;
+    clearFieldErrors();
+
+    const urlParams  = new URLSearchParams(window.location.search);
+    const currentRoute = urlParams.get('route') || '';
+    const routeSelect  = document.getElementById('routeSelect');
+    if (routeSelect && currentRoute && currentRoute !== 'all') {
+      routeSelect.value = currentRoute;
+    }
+
+    setTimeInputToNow(0);
+    document.querySelectorAll(".time-chip").forEach(c => c.classList.remove("active"));
+    document.querySelector('.time-chip[data-add="0"]')?.classList.add("active");
+
+    setTimeout(() => {
+      if (landmarkSearch) htmx.trigger(landmarkSearch, "input");
+    }, 50);
+  };
+
+  window.closeSheet = function() {
+    const sheet    = document.getElementById("sheet");
+    const backdrop = document.getElementById("sheetBackdrop");
+    if (sheet)    sheet.hidden    = true;
+    if (backdrop) backdrop.hidden = true;
+    const dc = document.getElementById("dupDialogContainer");
+    if (dc) dc.innerHTML = "";
+  };
+
+  // ── focusin: re-open landmark dropdown when user taps the search field again ──
+  document.addEventListener("focusin", (e) => {
+    if (e.target.id === "landmarkSearch") {
+      // Clear any prior selection — user is trying to change their stop
+      const lid = document.getElementById("landmarkId");
+      if (lid) lid.value = "";
+      const hint = document.getElementById("landmarkHint");
+      if (hint) hint.hidden = false;
+      // Fire HTMX search immediately to show the list
+      setTimeout(() => htmx.trigger(e.target, "input"), 10);
+    }
+  });
+
+  // ── Sync manual inputs on blur ──
+  document.addEventListener("blur", (e) => {
+    if (e.target.id === "timeHour" || e.target.id === "timeMinute") {
+      syncManualTime();
+    }
+  }, true);
+
+  // ── Global Click Delegation ──
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#openFormBtn")) { window.openSheet(); return; }
+    if (e.target.closest("#cancelFormBtn") || e.target.id === "sheetBackdrop") { window.closeSheet(); return; }
+
+    // Time quick-picks
+    const timeChip = e.target.closest(".time-chip");
+    if (timeChip) {
+      const add = parseInt(timeChip.dataset.add, 10) || 0;
+      setTimeInputToNow(add);
+      document.querySelectorAll(".time-chip").forEach(c => c.classList.remove("active"));
+      timeChip.classList.add("active");
+      return;
+    }
+
+    // AM/PM Toggle
+    const periodChip = e.target.closest(".period-chip");
+    if (periodChip) {
+      document.querySelectorAll(".period-chip").forEach(c => c.classList.remove("active"));
+      periodChip.classList.add("active");
+      syncManualTime();
+      return;
+    }
+
+    // Landmark selection from dropdown
+    const lmOption = e.target.closest(".landmark-option");
+    if (lmOption) {
+      const id   = lmOption.dataset.id;
+      const name = lmOption.querySelector(".lm-name")?.textContent?.trim() || lmOption.textContent.trim();
+      const lid  = document.getElementById("landmarkId");
+      const lsrc = document.getElementById("landmarkSearch");
+      const lls  = document.getElementById("landmarkList");
+      const lhnt = document.getElementById("landmarkHint");
+      const fmsg = document.getElementById("formMsg");
+      if (lid)  lid.value  = id;
+      if (lsrc) { lsrc.value = name; lsrc.classList.remove("field-error"); }
+      if (lls)  lls.innerHTML = "";
+      if (lhnt) lhnt.hidden  = true;
+      if (fmsg) fmsg.innerHTML = "";
+      return;
+    }
+
+    // Click outside landmark list closes it
+    const search = document.getElementById("landmarkSearch");
+    const list   = document.getElementById("landmarkList");
+    if (list && search && !search.contains(e.target) && !list.contains(e.target) && !e.target.closest(".landmark-option")) {
+      list.innerHTML = "";
+    }
+  });
+
+  // ── Change: route reset clears landmark ──
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "routeSelect") {
+      const lid  = document.getElementById("landmarkId");
+      const lsrc = document.getElementById("landmarkSearch");
+      const lls  = document.getElementById("landmarkList");
+      const lhnt = document.getElementById("landmarkHint");
+      if (lid)  lid.value    = "";
+      if (lsrc) lsrc.value   = "";
+      if (lls)  lls.innerHTML = "";
+      if (lhnt) lhnt.hidden  = false;
+      clearFieldErrors();
+    }
+  });
+
+  // ── Client-side validation before HTMX fires ──
+  document.addEventListener("htmx:configRequest", (e) => {
+    if (e.target.id !== "tripForm") return;
+    clearFieldErrors();
+    const fmsg = document.getElementById("formMsg");
+    if (fmsg) fmsg.innerHTML = "";
+
+    const landmark = (document.getElementById("landmarkId")?.value || "").trim();
+    const time     = (document.getElementById("timeInput")?.value  || "").trim();
+    let valid = true;
+
+    if (!landmark) {
+      const ls = document.getElementById("landmarkSearch");
+      if (ls) ls.classList.add("field-error");
+      showFormError("⚠️ Please tap a stop name from the list.");
+      valid = false;
+    }
+    if (!time) {
+      const hhEl = document.getElementById("timeHour");
+      const mmEl = document.getElementById("timeMinute");
+      if (hhEl) hhEl.classList.add("field-error");
+      if (mmEl) mmEl.classList.add("field-error");
+      showFormError("⚠️ Please enter a valid departure time.");
+      valid = false;
+    }
+    if (!valid) e.preventDefault();
+  });
+
+  // ── Toast + board update events from HX-Trigger headers ──
+  document.addEventListener("toast", (e) => {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+    toast.textContent = e.detail.value;
+    toast.hidden = false;
+    toast.classList.add("show");
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => { toast.hidden = true; }, 300);
+    }, 2600);
+  });
+
+  document.addEventListener("closeSheet", () => {
+    window.closeSheet();
+    htmx.trigger("#board-container", "updateBoard");
+  });
+
+  document.addEventListener("updateBoard", () => {
+    htmx.trigger("#board-container", "updateBoard");
+  });
+});
+</script>
+
+
+</head>
+
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <span class="brand">🚐 Van Board</span>
+    <span class="today-label">{{ today_label }}</span>
+  </div>
+  <div class="chip-row" id="routeFilters" role="tablist" aria-label="Filter by route">
+    <button class="chip" role="tab" aria-selected="{{ 'true' if current_filter == 'all' else 'false' }}" hx-get="/?route=all" hx-push-url="true" hx-target="body">All routes</button>
+    {% for route in ROUTES %}
+    <button class="chip" role="tab" aria-selected="{{ 'true' if current_filter == route.id else 'false' }}" hx-get="/?route={{ route.id }}" hx-push-url="true" hx-target="body">{{ route_label(route) }}</button>
+    {% endfor %}
+  </div>
+</header>
+
+<div id="board-container" hx-get="/trips?route={{ current_filter }}" hx-trigger="every 15s, updateBoard from:body" hx-swap="innerHTML">
+  {% include 'partials/board.html' %}
+</div>
+
+<button class="fab" id="openFormBtn" aria-haspopup="dialog" aria-label="Log a van">+ Log a van</button>
+
+<!-- Submission sheet -->
+<div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="sheet-handle"></div>
+  <h2 id="sheetTitle">Log a van</h2>
+
+  <form id="tripForm" hx-post="/submit" hx-target="#formMsg" hx-swap="innerHTML">
+    <div id="formMsg" role="status" aria-live="polite"></div>
+
+    <label class="field">
+      <span>Route</span>
+      <select id="routeSelect" name="routeId" required hx-get="/landmarks" hx-target="#landmarkList" hx-include="#landmarkSearch, #routeSelect" hx-trigger="change">
+        {% for route in ROUTES %}
+        <option value="{{ route.id }}">{{ route_label(route) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="field">
+      <span>Pickup landmark <span class="required-star">*</span></span>
+      <input type="text" id="landmarkSearch" name="q"
+             placeholder="Tap to search your stop…"
+             autocomplete="off"
+             aria-label="Search pickup stops"
+             hx-get="/landmarks"
+             hx-target="#landmarkList"
+             hx-trigger="input delay:200ms, focus, keyup[key=='Enter'], load"
+             hx-include="#routeSelect" />
+      <div class="landmark-list" id="landmarkList" role="listbox"></div>
+      <input type="hidden" id="landmarkId" name="landmarkId" />
+      <span class="field-hint" id="landmarkHint">👆 Tap a stop name from the list to select it</span>
+      <details class="custom-stop-wrap">
+        <summary class="custom-stop-toggle">Stop not in list? Add it here</summary>
+        <input type="text" id="customStop" placeholder="Type your exact stop name…" maxlength="60"
+          oninput="
+            const v=this.value.trim();
+            if(v){document.getElementById('landmarkId').value='custom:'+v;document.getElementById('landmarkSearch').value=v;document.getElementById('landmarkHint').hidden=true;}
+            else{document.getElementById('landmarkId').value='';}
+          " />
+      </details>
+    </div>
+
+    <div class="field-row">
+      <label class="field" style="flex: 1.2;">
+        <span>Departure time <span class="required-star">*</span></span>
+        <div class="time-quick-picks" style="display:flex;gap:6px;margin-bottom:10px;">
+          <button type="button" class="chip time-chip active" data-add="0" aria-label="Depart now">Now</button>
+          <button type="button" class="chip time-chip" data-add="15" aria-label="Depart in 15 minutes">+15m</button>
+          <button type="button" class="chip time-chip" data-add="30" aria-label="Depart in 30 minutes">+30m</button>
+        </div>
+        <!-- Big readable selected-time display -->
+        <div class="time-display-wrap">
+          <span class="time-display" id="timeDisplay" aria-live="polite">—</span>
+          <span class="time-display-hint">Selected departure time</span>
+        </div>
+        <!-- Manual entry constraints: max 12 hours, 59 mins -->
+        <div class="manual-time-inputs" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+          <input type="number" id="timeHour" min="1" max="12" placeholder="HH" aria-label="Hour" style="width:60px; text-align:center;">
+          <span style="font-weight:700; color:var(--ink-soft);">:</span>
+          <input type="number" id="timeMinute" min="0" max="59" placeholder="MM" aria-label="Minute" style="width:60px; text-align:center;">
+          <div class="am-pm-toggle" style="display:flex; gap:4px; margin-left:8px;">
+            <button type="button" class="chip period-chip active" data-period="AM" aria-label="AM">AM</button>
+            <button type="button" class="chip period-chip" data-period="PM" aria-label="PM">PM</button>
+          </div>
+        </div>
+        <span class="field-hint" style="margin-top:6px;">Set exact time above or use quick picks</span>
+        <!-- Hidden field carries the HH:MM (24hr) value to server -->
+        <input type="hidden" id="timeInput" name="time" />
+      </label>
+      <label class="field">
+        <span>Vehicle number</span>
+        <input type="text" id="vehicleInput" name="vehicleNumber" placeholder="e.g. TS09 AB 1234" maxlength="14" aria-label="Vehicle number (optional)" />
+      </label>
+    </div>
+
+    <label class="field">
+      <span>Note (optional)</span>
+      <input type="text" id="noteInput" name="note" placeholder="e.g. runs only Mon–Sat" maxlength="140" aria-label="Additional note" />
+    </label>
+
+    <div class="sheet-actions">
+      <button type="button" class="btn-ghost" id="cancelFormBtn">Cancel</button>
+      <button type="submit" class="btn-primary" id="submitBtn">✓ Log this van</button>
+    </div>
+  </form>
+</section>
+
+<!-- Duplicate confirm dialog container -->
+<div id="dupDialogContainer"></div>
+
+<div class="toast" id="toast" hidden></div>
+
+</body>
+</html>

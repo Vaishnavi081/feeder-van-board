@@ -1,0 +1,21 @@
+<div class="trip-actions">
+  {% if trip.my_trip %}
+    <button class="delete-btn"
+            hx-post="/delete/{{ trip.id }}"
+            hx-target="#trip-card-{{ trip.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete this trip you logged?"
+            title="Delete this trip">🗑 Delete</button>
+  {% endif %}
+  {% if not trip.already_reported %}
+    <button class="report-btn" title="Report wrong info"
+            hx-post="/report/{{ trip.id }}"
+            hx-target="#trip-actions-{{ trip.id }}"
+            hx-swap="innerHTML">⚑ Report</button>
+  {% else %}
+    <span class="report-btn" style="opacity:0.5;cursor:default;">⚑ Reported</span>
+  {% endif %}
+  {% if trip.reportCount >= 3 %}
+    <span class="report-warning">⚠ Flagged by riders</span>
+  {% endif %}
+</div>

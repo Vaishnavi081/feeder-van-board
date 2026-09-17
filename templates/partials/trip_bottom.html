@@ -1,0 +1,14 @@
+<div class="trip-bottom">
+  {% if trip.confirmCount and trip.confirmCount > 0 %}
+    <span class="confirm-meta">✅ {{ trip.confirmCount }} confirmed · {{ minutes_ago(trip.lastConfirmedAt or trip.createdAt) }}</span>
+  {% else %}
+    <span class="confirm-meta unconfirmed">❓ Not yet confirmed</span>
+  {% endif %}
+  <button class="confirm-btn {% if trip.already_confirmed %}confirmed{% endif %}"
+          {% if trip.already_confirmed %}disabled{% endif %}
+          hx-post="/confirm/{{ trip.id }}"
+          hx-target="#trip-bottom-{{ trip.id }}"
+          hx-swap="innerHTML">
+    {% if trip.already_confirmed %}✓ Confirmed{% elif trip.confirmCount == 0 %}Be first to confirm!{% else %}Confirm running{% endif %}
+  </button>
+</div>

@@ -1,0 +1,14 @@
+{% for l in options %}
+{% set is_selected = (l.id == request.form.get('landmarkId', '')) %}
+{% set alias_hint = '' %}
+{% if query and query not in l.name.lower() %}
+  {% for a in l.aliases %}
+    {% if query in a %}
+      {% set alias_hint = ' <span class="alias-hint">(' ~ a ~ ')</span>' %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+<div class="landmark-option {% if is_selected %}selected{% endif %}" data-id="{{ l.id }}" role="option" aria-selected="{{ 'true' if is_selected else 'false' }}">
+  <span class="lm-name">{{ l.name }}</span>{{ alias_hint | safe }}
+</div>
+{% endfor %}

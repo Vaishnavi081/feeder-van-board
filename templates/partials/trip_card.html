@@ -1,0 +1,18 @@
+{% set landmark = landmark_by_id.get(trip.landmarkId) %}
+{% set custom_stop = trip.landmarkId[7:] if trip.landmarkId and trip.landmarkId.startswith('custom:') else None %}
+<article class="trip-card {% if is_departed %}trip-departed{% endif %}" id="trip-card-{{ trip.id }}">
+  <div class="trip-top">
+    <span class="trip-time">{{ format_time(trip.time) }}{% if is_departed %} <span class="departed-badge">Departed</span>{% endif %}</span>
+    <span class="trip-vehicle">{{ trip.vehicleNumber or "—" }}</span>
+  </div>
+  <div class="trip-landmark">{{ custom_stop if custom_stop else (landmark.name if landmark else "Unknown stop") }}</div>
+  {% if trip.note %}
+    <div class="trip-note">{{ trip.note }}</div>
+  {% endif %}
+  <div id="trip-bottom-{{ trip.id }}">
+    {% include 'partials/trip_bottom.html' %}
+  </div>
+  <div id="trip-actions-{{ trip.id }}">
+    {% include 'partials/trip_actions.html' %}
+  </div>
+</article>
